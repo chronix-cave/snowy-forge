@@ -1,6 +1,6 @@
 {
   "violet": {
-    "kernel_repo": "https://github.com/chronix-builder/kernel_xiaomi_sm6150.git",
+    "kernel_repo": "https://github.com/chronix-cave/kernel_xiaomi_sm6150.git",
     "kernel_branch": "snowy",
     "defconfig": "vendor/snowy_defconfig",
     "kernel_version": "4.14",
