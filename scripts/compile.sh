@@ -42,7 +42,7 @@ export LOCALVERSION=
 ./scripts/config --file "${OUT_DIR}/.config" --disable CONFIG_LOCALVERSION_SHA
 
 # Merge config fragments written by variant.sh into out/.config
-FRAGMENT_DIR="snowflake_fragments"
+FRAGMENT_DIR="snowy_fragments"
 if [ -d "$FRAGMENT_DIR" ]; then
     for FRAGMENT in "$FRAGMENT_DIR"/*.config; do
         [ -s "$FRAGMENT" ] || continue
@@ -108,7 +108,7 @@ for f in dtbo.img dtb.img; do
 done
 
 DATE_TAG=$(date +%Y%m%d-%H%M)
-ZIP_NAME="snowflake-${DEVICE}-${VARIANT}-${DATE_TAG}.zip"
+ZIP_NAME="${KERNEL_NAME}-${DEVICE}-${VARIANT}-${DATE_TAG}.zip"
 
 pushd "$AK3_DIR" >/dev/null
 zip -r9 "${WORKDIR}/${ZIP_NAME}" . -x ".git/*" -x "*.zip"

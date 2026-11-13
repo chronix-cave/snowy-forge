@@ -17,8 +17,8 @@ KERNEL_VERSION=$(read_field kernel_version)
 
 # Clone + pin dependencies BEFORE executing anything from them
 WORKDIR="$(pwd)"
-KSU_SRC="${WORKDIR}/.snowflake_deps/bakasu"
-SUSFS_SRC="${WORKDIR}/.snowflake_deps/susfs"
+KSU_SRC="${WORKDIR}/.snowy_deps/bakasu"
+SUSFS_SRC="${WORKDIR}/.snowy_deps/susfs"
 mkdir -p "$(dirname "$KSU_SRC")"
 
 log "Cloning BakaSU (pinned to ${KSU_REPO_PIN})"
@@ -33,7 +33,7 @@ git -C "$SUSFS_SRC" remote add origin "$SUSFS_REPO_URL"
 git -C "$SUSFS_SRC" fetch --quiet --depth 1 origin "$SUSFS_REPO_PIN"
 git -C "$SUSFS_SRC" checkout --quiet FETCH_HEAD
 
-FRAGMENT_DIR="snowflake_fragments"
+FRAGMENT_DIR="snowy_fragments"
 FRAGMENT_FILE="${FRAGMENT_DIR}/kernelsu.config"
 mkdir -p "$FRAGMENT_DIR"
 : > "$FRAGMENT_FILE"
@@ -84,7 +84,7 @@ else
         else
             REAL_REJ+=("$rej")
         fi
-    done < <(find . -path ./.snowflake_deps -prune -o -name '*.rej' -print0 2>/dev/null)
+    done < <(find . -path ./.snowy_deps -prune -o -name '*.rej' -print0 2>/dev/null)
 
     if [ "${#REAL_REJ[@]}" -gt 0 ]; then
         warn "SuSFS patch produced real rejected hunks:"

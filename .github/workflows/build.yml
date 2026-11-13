@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   set-matrix:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
       do_release: ${{ steps.gen.outputs.do_release }}
@@ -73,7 +73,9 @@ jobs:
 
   build:
     needs: set-matrix
-    runs-on: ubuntu-24.04
+    # Neutron Clang's binaries are linked against glibc 2.43, which is what the
+    # Ubuntu 26.04 runner image ships — the 24.04 image (glibc 2.39) cannot run them.
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.set-matrix.outputs.matrix) }}
@@ -92,7 +94,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc cpio flex bison libssl-dev \
-            libelf-dev dwarves zip curl git python3 rsync jq ccache
+            libelf-dev dwarves zip curl git python3 rsync jq ccache zstd
 
       - name: Read device config
         id: devcfg
@@ -111,21 +113,31 @@ jobs:
 
           kernel_repo=$(jq_field kernel_repo)
           kernel_branch="${BRANCH_INPUT:-$(jq_field kernel_branch)}"
-          clang_version=$(jq_field clang_version)
           kernel_version=$(jq_field kernel_version)
+          clang_type=$(jq_field clang_type)
+          clang_version=$(jq_field clang_version)
+          clang_tag=$(jq_field clang_tag)
+          clang_type="${clang_type:-neutron}"
 
           if [ -z "$kernel_repo" ] || [ -z "$kernel_branch" ] || [ -z "$clang_version" ] || [ -z "$kernel_version" ]; then
             echo "::error::Incomplete config in $DEVICE_JSON — kernel_repo, kernel_branch, clang_version and kernel_version are all required."
             exit 1
           fi
 
+          if [ "$clang_type" = "neutron" ] && [ -z "$clang_tag" ]; then
+            echo "::error::$DEVICE_JSON uses clang_type=neutron but has no clang_tag — pin the Neutron Clang build to use."
+            exit 1
+          fi
+
           {
             echo "kernel_repo=$kernel_repo"
             echo "kernel_branch=$kernel_branch"
-            echo "clang_version=$clang_version"
             echo "kernel_version=$kernel_version"
+            echo "clang_type=$clang_type"
+            echo "clang_version=$clang_version"
+            echo "clang_tag=$clang_tag"
           } >> "$GITHUB_OUTPUT"
-          echo "→ Building kernel_branch=$kernel_branch"
+          echo "→ Building kernel_branch=$kernel_branch with $clang_type clang $clang_version${clang_tag:+ (build $clang_tag)}"
 
       - name: Clone kernel source
         run: |
@@ -136,8 +148,8 @@ jobs:
       - name: Cache toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          path: kernel_src/toolchain/clang-${{ steps.devcfg.outputs.clang_version }}
-          key: toolchain-clang-${{ steps.devcfg.outputs.clang_version }}
+          path: kernel_src/toolchain
+          key: toolchain-${{ steps.devcfg.outputs.clang_type }}-${{ steps.devcfg.outputs.clang_version }}-${{ steps.devcfg.outputs.clang_tag || 'default' }}
 
       # Persists ccache's object cache across CI runs
       - name: Set up ccache
@@ -174,7 +186,7 @@ jobs:
         if: failure()
         working-directory: kernel_src
         run: |
-          find . -path ./.snowflake_deps -prune -o -name '*.rej' -print0 > ../rejects.list
+          find . -path ./.snowy_deps -prune -o -name '*.rej' -print0 > ../rejects.list
           if [ -s ../rejects.list ]; then
             tar -czf ../patch-rejects.tar.gz --null -T ../rejects.list
           fi
@@ -183,7 +195,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
-          name: snowflake-${{ matrix.device }}-${{ matrix.variant }}-rejects
+          name: SnowyJr-${{ matrix.device }}-${{ matrix.variant }}-rejects
           path: patch-rejects.tar.gz
           if-no-files-found: ignore
 
@@ -206,8 +218,8 @@ jobs:
       - name: Upload flashable zip
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
-          name: snowflake-${{ matrix.device }}-${{ matrix.variant }}
-          path: kernel_src/snowflake-*.zip
+          name: SnowyJr-${{ matrix.device }}-${{ matrix.variant }}
+          path: kernel_src/SnowyJr-*.zip
           if-no-files-found: error
 
       - name: Upload debug artifacts
@@ -224,7 +236,7 @@ jobs:
         if: matrix.variant == 'ksu'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
-          name: snowflake-${{ matrix.device }}-${{ matrix.variant }}-versions
+          name: SnowyJr-${{ matrix.device }}-${{ matrix.variant }}-versions
           path: |
             kernel_src/${{ matrix.device }}-bakasu-version.txt
             kernel_src/${{ matrix.device }}-susfs-version.txt
@@ -234,14 +246,14 @@ jobs:
   release:
     needs: [set-matrix, build]
     if: ${{ needs.set-matrix.outputs.do_release == 'true' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
-          pattern: snowflake-*
+          pattern: SnowyJr-*
           path: release_files
 
       - name: Flatten artifact folders
@@ -253,6 +265,7 @@ jobs:
         run: |
           {
             echo "> [!NOTE]"
+            echo "> Kernel: Snowy Jr."
             # All devices share one globally-pinned BakaSU/SuSFS commit
             # (config.env) — so their version strings SHOULD be identical
             # across every device. We verify that instead of assuming it:
@@ -285,8 +298,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           DATE=$(date +'%Y-%m-%d')
-          gh release create "snowflake-${DATE}-${{ github.run_id }}" \
+          gh release create "SnowyJr-${DATE}-${{ github.run_id }}" \
             --repo "${{ github.repository }}" \
-            --title "Build - ${DATE}" \
+            --title "Snowy Jr. - ${DATE}" \
             --notes-file release_notes.md \
             final/*.zip
